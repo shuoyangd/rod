@@ -3,6 +3,7 @@ import argparse
 import sys
 import io
 import datetime
+import re
 from subprocess import Popen, call, PIPE
 
 MOSES_WORKING_DIR = "moses-working-dir"
@@ -25,14 +26,15 @@ argparser.add_argument("--trace", "-t", action='store_true', default=False, help
 
 args = argparser.parse_args()
 
-def table2html(table):
-	res = "<table>\n"
+def table2html(table, width=1):
+	res = "<table border=\"1\" width=\"" + str(int(width * 100)) + "%\">\n"
 	for row in table:
 		res += "\t<tr>"
 		for cell in row:
 			res += ("<td>" + cell + "</td>")
 		res += "</tr>\n"
 	res += "</table>\n"
+	return res
 
 if __name__ == "__main__":
 	if args.kbest and args.force:
@@ -57,9 +59,11 @@ if __name__ == "__main__":
 
 	# prepare sentence input
 	if args.inputFile:
+		inputDir = inputFile
 		inputFile = open(inputFile, 'r')
 	else:
-		inputFile = open(cfgvar[MOSES_WORKING_DIR] + "/evaluation/" + cfgvar[CORPORA_NAME] + ".input.tc." + cfgvar[RUN_NUMBER], 'r')
+		inputDir = cfgvar[MOSES_WORKING_DIR] + "/evaluation/" + cfgvar[CORPORA_NAME] + ".input.tc." + cfgvar[RUN_NUMBER]
+		inputFile = open(inputDir, 'r')
 	linen = 0
 	for line in inputFile:
 		if linen == args.sentenceid:
@@ -157,13 +161,14 @@ if __name__ == "__main__":
 	else:
 		reportFile = open(dirname + "report.md", 'w')
 	reportFile.write(\
-			"+ Datetime: " + now.strftime("%m/%d/%Y %H:%M:%S") + "\n" +\
-			"+ Working Directory: " + cfgvar[MOSES_WORKING_DIR] + "\n" +\
-			"+ Run Number: " + cfgvar[RUN_NUMBER] + "\n" +\
-			"+ Input File: " + inputFile + "\n" +\
-			"+ Refernece File: " + ": ".join(origrefs) + "\n" +\
-			"+ Sentence ID: " + args.sentenceid + "\n" +\
-			"+ Decoder Command: " + decodercommand + "\n\n---\n\nOutput:\n\n")
+			"<!DOCTYPE html>\n<html>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />\n<body>\n<ul>" +\
+			"<li> Datetime: " + now.strftime("%m/%d/%Y %H:%M:%S") + "</li>\n" +\
+			"<li> Working Directory: " + cfgvar[MOSES_WORKING_DIR] + "</li>\n" +\
+			"<li> Run Number: " + cfgvar[RUN_NUMBER] + "</li>\n" +\
+			"<li> Input File: " + inputDir + "</li>\n" +\
+			"<li> Refernece File: " + ": ".join(origrefs) + "</li>\n" +\
+			"<li> Sentence ID: " + str(args.sentenceid) + "</li>\n" +\
+			"<li> Decoder Command: " + decodercommand + "</li></ul>\n\n<hr>\n\n<h2>Output:</h2>\n\n")
 	if args.kbest:
 		# get the first line and parse it
 		kbestFile = open(dirname + "kbest", 'r')
@@ -193,7 +198,7 @@ if __name__ == "__main__":
 		if args.bleu:
 			vals.append(bleu)
 			vars.append("bleu")
-		vals.append(float(overallScore))
+		vals.append(overallScore)
 		vars.append("overall score")
 		table = []
 		table.append(vars)
@@ -212,10 +217,10 @@ if __name__ == "__main__":
 				for tok in breakupTokens:
 					tok = tok.strip()
 					if numPattern.match(tok):
-						vals.append(float(tok))
+						vals.append(tok)
 				# bleu score as the last col
-				vals.append(float(bleu))
-				vals.append(float(overallScore))
+				vals.append(bleu)
+				vals.append(overallScore)
 				table.append(vals)
 		else:
 			for kbestline in kbestFile:
@@ -229,11 +234,12 @@ if __name__ == "__main__":
 				for tok in breakupTokens:
 					tok = tok.strip()
 					if numPattern.match(tok):
-						vals.append(float(tok))
-				vals.append(float(overallScore))
+						vals.append(tok)
+				vals.append(overallScore)
 				table.append(vals)
 		# transform that into html
-		tabhtml = table2html(table)
+		tabhtml = table2html(table, 1.5)
 		reportFile.write(tabhtml)
+		reportFile.write("</body>\n</html>\n")
 		reportFile.close()
 
