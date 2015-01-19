@@ -25,6 +25,15 @@ argparser.add_argument("--trace", "-t", action='store_true', default=False, help
 
 args = argparser.parse_args()
 
+def table2html(table):
+	res = "<table>\n"
+	for row in table:
+		res += "\t<tr>"
+		for cell in row:
+			res += ("<td>" + cell + "</td>")
+		res += "</tr>\n"
+	res += "</table>\n"
+
 if __name__ == "__main__":
 	if args.kbest and args.force:
 		raise EnvironmentError("cannot generate k-best list and do force encoding at the same time.")
@@ -121,7 +130,7 @@ if __name__ == "__main__":
 	if args.trace:
 		decodercommand += " -T " + dirname + "trace"
 	decodercommand += " > " + dirname + "trans 2>" + dirname + "decode.STDERR"
-	sys.stderr.write("executing: " + decodercommand)
+	sys.stderr.write("executing: " + decodercommand + "\n")
 	call(decodercommand, shell=True)
 
 	# bleu command
@@ -139,10 +148,10 @@ if __name__ == "__main__":
 		else:
 			trans = dirname + "trans"
 		bleucommand = "cat " + trans + " | " + cfgvar[MOSES_BIN_DIR] + "/sentence-bleu " + " ".join(refs) + " > " + dirname + "bleu 2>" + dirname + "bleu.STDERR"
-		sys.stderr.write("executing: " + bleucommand)
+		sys.stderr.write("executing: " + bleucommand + "\n")
 		call(bleucommand, shell=True)
 
-	# TODO: generate report
+	# generate report
 	if args.outputFile:
 		reportFile = open(args.outputFile, 'w')
 	else:
@@ -155,34 +164,76 @@ if __name__ == "__main__":
 			"+ Refernece File: " + ": ".join(origrefs) + "\n" +\
 			"+ Sentence ID: " + args.sentenceid + "\n" +\
 			"+ Decoder Command: " + decodercommand + "\n\n---\n\nOutput:\n\n")
-	if args.kbest and args.bleu:
+	if args.kbest:
 		# get the first line and parse it
 		kbestFile = open(dirname + "kbest", 'r')
-		bleuFile = open(dirname + "bleu", 'r')
+		if args.bleu:
+			bleuFile = open(dirname + "bleu", 'r')
 
 		kbestline = kbestFile.readline()
-		bleu = bleuFile.readline()
+		if args.bleu:
+			bleu = bleuFile.readline().strip()
 		items = kbestline.split("|||")
 		outputSent = items[1].strip()
-		rawBreakupScore = items[2].strip()
+		rawBreakupScore = items[2]
 		overallScore = items[3].strip()
 
 		# build table head and first line
-		vars = []
-		vals = []
+		vars = ["output sentence"]
+		vals = [outputSent]
 		numPattern = re.compile("-?[0-9]+\.?[0-9]+")
-		breakupTokens = breakupScores.split(' ')
+		breakupTokens = rawBreakupScore.split(' ')
 		for tok in breakupTokens:
+			tok = tok.strip()
 			if not numPattern.match(tok):
 				var = tok[:-1]
 			else:
-				vals.append(float(tok))
+				vals.append(tok)
 				vars.append(var)
+		if args.bleu:
+			vals.append(bleu)
+			vars.append("bleu")
+		vals.append(float(overallScore))
+		vars.append("overall score")
 		table = []
-		# build table as list and then transform that into html
-
-	elif args.kbest:
-
-	else:
-		# zhe shi'er buhaoban
+		table.append(vars)
+		table.append(vals)
+		# build table as list
+		if args.bleu:
+			for (kbestline, bleu) in zip(kbestFile, bleuFile):
+				bleu = bleu.strip()
+				items = kbestline.split("|||")
+				outputSent = items[1].strip()
+				rawBreakupScore = items[2]
+				overallScore = items[3].strip()
+				# output sentence as the first col
+				vals = [outputSent]
+				breakupTokens = rawBreakupScore.split(' ')
+				for tok in breakupTokens:
+					tok = tok.strip()
+					if numPattern.match(tok):
+						vals.append(float(tok))
+				# bleu score as the last col
+				vals.append(float(bleu))
+				vals.append(float(overallScore))
+				table.append(vals)
+		else:
+			for kbestline in kbestFile:
+				items = kbestline.split("|||")
+				outputSent = items[1].strip()
+				rawBreakupScore = items[2]
+				overallScore = items[3].strip()
+				# output sentence as the first col
+				vals = [outputSent]
+				breakupTokens = rawBreakupScore.split(' ')
+				for tok in breakupTokens:
+					tok = tok.strip()
+					if numPattern.match(tok):
+						vals.append(float(tok))
+				vals.append(float(overallScore))
+				table.append(vals)
+		# transform that into html
+		tabhtml = table2html(table)
+		reportFile.write(tabhtml)
+		reportFile.close()
 
