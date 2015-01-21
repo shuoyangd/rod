@@ -26,13 +26,21 @@ argparser.add_argument("--trace", "-t", action='store_true', default=False, help
 
 args = argparser.parse_args()
 
-def table2html(table, width=1):
+def table2html(table, width=1, head=True, nu=False):
 	res = "<table border=\"1\" width=\"" + str(int(width * 100)) + "%\">\n"
+	ishead = True
+	linen = 0
 	for row in table:
 		res += "\t<tr>"
+		if ishead and nu:
+			res += ("<td>#</td>")
+		elif nu:
+			res += ("<td>" + str(linen) + "</td>")
 		for cell in row:
 			res += ("<td>" + cell + "</td>")
 		res += "</tr>\n"
+		ishead = False
+		linen += 1
 	res += "</table>\n"
 	return res
 
@@ -108,33 +116,15 @@ if __name__ == "__main__":
 	ini = dirname + "moses.ini"
 	feats = []
 	if args.force:
-		print origini
 		originiFile = open(origini, 'r')
 		iniFile = open(ini, 'w')
 		isFeature = False
 		for line in originiFile:
 			if line.strip() == "[feature]":
 				isFeature = True
-			if isFeature:
-				if line.strip() == "":
-					iniFile.write("ConstrainedDecoding path=" + refs[0] + "\n")
-					isFeature = False
-				else:
-					# what's the feature (by the way)?
-					featToks = line.split(' ')
-					if len(featToks) == 1:
-						feats.append(featToks[0])
-					else:
-						featname = None
-						featnum = 1
-						for featTok in featToks:
-							if featTok.startswith("name="):
-								featname = featTok[featTok.find('=') + 1:].strip()
-							if featTok.startswith("num-features"):
-								featnum = featTok[featTok.find('=') + 1:].strip()
-						if featname:
-							for i in range(0, int(featnum)):
-								feats.append(featname)
+			if isFeature and line.strip() == "":
+				iniFile.write("ConstrainedDecoding path=" + refs[0] + "\n")
+				isFeature = False
 			iniFile.write(line)
 		iniFile.close()
 		originiFile.close()
@@ -142,16 +132,20 @@ if __name__ == "__main__":
 		call("cp " + origini + " " + ini, shell=True)
 
 	# decoder command
+	kbest = dirname + "kbest"
+	trans = dirname + "trans"
+	trace = dirname + "trace"
+	err = dirname + "decode.STDERR"
 	decodercommand = "echo \"" + inputSent + "\" | " + cfgvar[MOSES_BIN_DIR] + "/moses_chart -f " + ini
 	if args.kbest:
-		decodercommand += (" -n-best-list " + dirname + "kbest " + str(args.kbest))
+		decodercommand += (" -n-best-list " + kbest + " " + str(args.kbest))
 	if args.distinct:
 		decodercommand += (" distinct")
 	if args.decodersettings:
 		decodercommand += " " + args.decodersettings
 	if args.trace:
-		decodercommand += " -T " + dirname + "trace"
-	decodercommand += " > " + dirname + "trans 2>" + dirname + "decode.STDERR"
+		decodercommand += " -T " + trace
+	decodercommand += " > " + trans + " 2>" + err
 	sys.stderr.write("executing: " + decodercommand + "\n")
 	call(decodercommand, shell=True)
 
@@ -161,14 +155,12 @@ if __name__ == "__main__":
 		if args.kbest:
 			trans = dirname + "ktrans"
 			transFile = open(trans, 'w')
-			kbestFile = open(dirname + "kbest", 'r')
+			kbestFile = open(kbest, 'r')
 			for line in kbestFile:
 				cells = line.split("|||")
 				transFile.write(cells[1].strip() + "\n")
 			transFile.close()
 			kbestFile.close()
-		else:
-			trans = dirname + "trans"
 		bleucommand = "cat " + trans + " | " + cfgvar[MOSES_BIN_DIR] + "/sentence-bleu " + " ".join(refs) + " > " + dirname + "bleu 2>" + dirname + "bleu.STDERR"
 		sys.stderr.write("executing: " + bleucommand + "\n")
 		call(bleucommand, shell=True)
@@ -177,7 +169,7 @@ if __name__ == "__main__":
 	if args.outputFile:
 		reportFile = open(args.outputFile, 'w')
 	else:
-		reportFile = open(dirname + "report.md", 'w')
+		reportFile = open(dirname + "report.html", 'w')
 	reportFile.write(\
 			"<!DOCTYPE html>\n<html>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />\n<body>\n<ul>" +\
 			"<li> Datetime: " + now.strftime("%m/%d/%Y %H:%M:%S") + "</li>\n" +\
@@ -190,7 +182,7 @@ if __name__ == "__main__":
 	# has option -k: extract from k-best list
 	if args.kbest:
 		# get the first line and parse it
-		kbestFile = open(dirname + "kbest", 'r')
+		kbestFile = open(kbest, 'r')
 		if args.bleu:
 			bleuFile = open(dirname + "bleu", 'r')
 
@@ -205,7 +197,7 @@ if __name__ == "__main__":
 		# build table head and first line
 		vars = ["output sentence"]
 		vals = [outputSent]
-		numPattern = re.compile("-?[0-9]+\.?[0-9]+")
+		numPattern = re.compile(r"[-+]?\d*\.\d+|\d+")
 		breakupTokens = rawBreakupScore.split(' ')
 		for tok in breakupTokens:
 			tok = tok.strip()
@@ -214,11 +206,11 @@ if __name__ == "__main__":
 			else:
 				vals.append(tok)
 				vars.append(var)
+		vals.append(overallScore)
+		vars.append("overall score")
 		if args.bleu:
 			vals.append(bleu)
 			vars.append("bleu")
-		vals.append(overallScore)
-		vars.append("overall score")
 		table = []
 		table.append(vars)
 		table.append(vals)
@@ -238,8 +230,8 @@ if __name__ == "__main__":
 					if numPattern.match(tok):
 						vals.append(tok)
 				# bleu score as the last col
-				vals.append(bleu)
 				vals.append(overallScore)
+				vals.append(bleu)
 				table.append(vals)
 		else:
 			for kbestline in kbestFile:
@@ -257,23 +249,70 @@ if __name__ == "__main__":
 				vals.append(overallScore)
 				table.append(vals)
 		# transform that into html
-		tabhtml = table2html(table, 1.5)
+		tabhtml = table2html(table, 1.5, nu=True)
 		reportFile.write(tabhtml)
 	# no option -k: extract from decode stderr output and .ini file
 	else:
-		err = dirname + "decode.STDERR"
+		# collect feature names
+		ini = dirname + "moses.ini"
+		iniFile = open(ini, 'r')
+		feats = ["output sentence"]
+		isFeature = False
+		for line in iniFile:
+			if isFeature and line.strip() == "":
+				isFeature = False
+			elif isFeature:
+				featToks = line.split(' ')
+				if len(featToks) == 1:
+					feats.append(line.strip())
+				else:
+					featname = None
+					featnum = 1
+					for featTok in featToks:
+						if featTok.startswith("name"):
+							featname = featTok[featTok.find('=') + 1:].strip()
+						if featTok.startswith("num-features"):
+							featnum = featTok[featTok.find('=') + 1:].strip()
+					if featname:
+						for i in range(0, int(featnum)):
+							feats.append(featname)
+			if line.strip() == "[feature]":
+				isFeature = True
+		iniFile.close()
+
+		# collect scores
+		overallScore = None
+		breakupScore = None
 		errFile = open(err, 'r')
-		numPattern = re.compile("-?[0-9]+\.?[0-9]+")
+		numPattern = re.compile(r"[-+]?\d*\.\d+|\d+")
 		for line in errFile:
 			if line.startswith("BEST TRANSLATION"):
 				toks = line.split(' ')
-				overallScore = numPattern.search(toks[-2]).group(0)
-				breakupScore = numPattern.findall(toks[-1])
-		feats.append("overallScore")
-		score = [].extend(breakupScore)
-		score.append(overallScore)
+				overallScore = numPattern.search(toks[-3]).group(0)
+				breakupScore = numPattern.findall(toks[-2])
+		errFile.close()
+
+		# collect output sentence
+		transFile = open(trans, 'r')
+		outputSent = transFile.readline()
+
+		# form feats and scores
+		feats.append("overall score")
+		score = [outputSent]
+		if overallScore:
+			score.append(overallScore)
+		if breakupScore:
+			score.extend(breakupScore)
+
+		# collect bleu score, if there is one
+		if args.bleu:
+			bleuFile = open(dirname + "bleu", 'r')
+			bleu = bleuFile.readline()
+			feats.append("bleu")
+			score.append(bleu)
+		
 		table = [feats, score]
-		tabhtml = table2html(table, 1.5)
+		tabhtml = table2html(table, 1.5, nu=True)
 		reportFile.write(tabhtml)
 	reportFile.write("</body>\n</html>\n")
 	reportFile.close()
