@@ -106,6 +106,7 @@ if __name__ == "__main__":
 	# prepare ini
 	origini = cfgvar[MOSES_WORKING_DIR] + "/evaluation/" + cfgvar[CORPORA_NAME] + ".filtered.ini." + cfgvar[RUN_NUMBER]
 	ini = dirname + "moses.ini"
+	feats = []
 	if args.force:
 		print origini
 		originiFile = open(origini, 'r')
@@ -114,9 +115,26 @@ if __name__ == "__main__":
 		for line in originiFile:
 			if line.strip() == "[feature]":
 				isFeature = True
-			if isFeature and line.strip() == "":
-				iniFile.write("ConstrainedDecoding path=" + refs[0] + "\n")
-				isFeature = False
+			if isFeature:
+				if line.strip() == "":
+					iniFile.write("ConstrainedDecoding path=" + refs[0] + "\n")
+					isFeature = False
+				else:
+					# what's the feature (by the way)?
+					featToks = line.split(' ')
+					if len(featToks) == 1:
+						feats.append(featToks[0])
+					else:
+						featname = None
+						featnum = 1
+						for featTok in featToks:
+							if featTok.startswith("name="):
+								featname = featTok[featTok.find('=') + 1:].strip()
+							if featTok.startswith("num-features"):
+								featnum = featTok[featTok.find('=') + 1:].strip()
+						if featname:
+							for i in range(0, int(featnum)):
+								feats.append(featname)
 			iniFile.write(line)
 		iniFile.close()
 		originiFile.close()
@@ -169,6 +187,7 @@ if __name__ == "__main__":
 			"<li> Refernece File: " + ": ".join(origrefs) + "</li>\n" +\
 			"<li> Sentence ID: " + str(args.sentenceid) + "</li>\n" +\
 			"<li> Decoder Command: " + decodercommand + "</li></ul>\n\n<hr>\n\n<h2>Output:</h2>\n\n")
+	# has option -k: extract from k-best list
 	if args.kbest:
 		# get the first line and parse it
 		kbestFile = open(dirname + "kbest", 'r')
@@ -240,6 +259,21 @@ if __name__ == "__main__":
 		# transform that into html
 		tabhtml = table2html(table, 1.5)
 		reportFile.write(tabhtml)
-		reportFile.write("</body>\n</html>\n")
-		reportFile.close()
-
+	# no option -k: extract from decode stderr output and .ini file
+	else:
+		err = dirname + "decode.STDERR"
+		errFile = open(err, 'r')
+		numPattern = re.compile("-?[0-9]+\.?[0-9]+")
+		for line in errFile:
+			if line.startswith("BEST TRANSLATION"):
+				toks = line.split(' ')
+				overallScore = numPattern.search(toks[-2]).group(0)
+				breakupScore = numPattern.findall(toks[-1])
+		feats.append("overallScore")
+		score = [].extend(breakupScore)
+		score.append(overallScore)
+		table = [feats, score]
+		tabhtml = table2html(table, 1.5)
+		reportFile.write(tabhtml)
+	reportFile.write("</body>\n</html>\n")
+	reportFile.close()
